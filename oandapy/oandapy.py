@@ -1,5 +1,8 @@
+import os
 import json
+import zipfile
 import requests
+from .utils import json_to_csv
 from .exceptions import BadEnvironment, OandaError
 
 """ OANDA API wrapper for OANDA's REST API """
@@ -166,6 +169,41 @@ class EndpointsMixin(object):
         endpoint = 'v1/accounts/%s/transactions/%s' % \
                    (account_id, transaction_id)
         return self.request(endpoint)
+
+    def get_account_history_url(self, account_id, **params):
+        """Returns link to download account history file
+        Docs: http://developer.oanda.com/rest-live/transaction-history
+        """
+        endpoint = '%s/v1/accounts/%s/alltransactions' % (self.api_url,
+                                                          account_id)
+        response = self.client.get(endpoint, params=params)
+        return response.headers['Location']
+
+    def get_account_history_file(self, file_url, directory, **params):
+        """Downloads account history to specified folder in both csv and json
+        Docs: http://developer.oanda.com/rest-live/transaction-history
+        """
+        params['stream'] = True
+        response = self.client.get(file_url, params=params)
+        if response.status_code == 404:
+            return None
+        out_file_name = 'acct'
+        zip_file_name = os.path.join(directory, out_file_name+'.zip')
+        csv_file = None
+        with open(zip_file_name, 'a+b') as f:
+            for chunk in response:
+                f.write(chunk)
+            f.seek(0)
+            zip_file = zipfile.ZipFile(f)
+            for name in zip_file.namelist():
+                zip_file.extract(name, directory)
+                full_path = os.path.join(directory, name)
+                new_full_path = os.path.join(directory, out_file_name+'.json')
+                os.rename(full_path, new_full_path)
+                csv_file = json_to_csv(new_full_path, out_file_name+'.csv')
+            zip_file.close()
+        os.remove(zip_file_name)
+        return csv_file
 
     """Forex Labs"""
 
