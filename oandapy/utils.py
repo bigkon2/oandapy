@@ -20,9 +20,15 @@ def json_to_csv(json_file_path, csv_name, delete_source=False):
                 headers.append(key)
     csv_file_path = os.path.join(os.path.dirname(json_file_path), csv_name)
     with open(csv_file_path, 'w') as f:
-        csv_file = csv.DictWriter(f, headers)
+        csv_file = csv.DictWriter(f, headers,
+                                  delimiter=',', lineterminator='\n')
         csv_file.writeheader()
         csv_file.writerows(data)
     if delete_source:
         os.remove(json_file_path)
     return csv_file_path
+
+
+def ensure_directory_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)

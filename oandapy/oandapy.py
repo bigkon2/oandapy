@@ -1,8 +1,10 @@
 import os
+import sys
 import json
+import time
 import zipfile
 import requests
-from .utils import json_to_csv
+from .utils import json_to_csv, ensure_directory_exists
 from .exceptions import BadEnvironment, OandaError
 
 """ OANDA API wrapper for OANDA's REST API """
@@ -170,16 +172,32 @@ class EndpointsMixin(object):
                    (account_id, transaction_id)
         return self.request(endpoint)
 
-    def get_account_history_url(self, account_id, **params):
-        """Returns link to download account history file
+    def get_account_history(self, account_id, directory=None, **params):
+        """ Returns path to the csv file, containing account history information
+        If directory is specified, file will be created in that directory,
+        otherwise it will be created near the main module.
         Docs: http://developer.oanda.com/rest-live/transaction-history
         """
         endpoint = '%s/v1/accounts/%s/alltransactions' % (self.api_url,
                                                           account_id)
         response = self.client.get(endpoint, params=params)
-        return response.headers['Location']
+        file_url = response.headers['Location']
+        if not directory:
+            directory = os.path.dirname(
+                os.path.abspath(sys.modules['__main__'].__file__)
+            )
+        ensure_directory_exists(directory)
+        max_tries = 5
+        timeout = 3
+        result = None
+        for step in xrange(max_tries):
+            result = self._get_account_history_file(file_url, directory)
+            if result:
+                break
+            time.sleep(timeout)
+        return result
 
-    def get_account_history_file(self, file_url, directory, **params):
+    def _get_account_history_file(self, file_url, directory, **params):
         """Downloads account history to specified folder in both csv and json
         Docs: http://developer.oanda.com/rest-live/transaction-history
         """
@@ -187,7 +205,7 @@ class EndpointsMixin(object):
         response = self.client.get(file_url, params=params)
         if response.status_code == 404:
             return None
-        out_file_name = 'acct'
+        out_file_name = 'account_history'
         zip_file_name = os.path.join(directory, out_file_name+'.zip')
         csv_file = None
         with open(zip_file_name, 'a+b') as f:
@@ -199,6 +217,8 @@ class EndpointsMixin(object):
                 zip_file.extract(name, directory)
                 full_path = os.path.join(directory, name)
                 new_full_path = os.path.join(directory, out_file_name+'.json')
+                if os.path.exists(new_full_path):
+                    os.remove(new_full_path)
                 os.rename(full_path, new_full_path)
                 csv_file = json_to_csv(new_full_path, out_file_name+'.csv')
             zip_file.close()
